@@ -28,6 +28,9 @@ namespace pv_projekt_2
             accounts = InitializeAccounts(accountCount, initialBalance); // Reset účtů
             Console.WriteLine("\nSimulace s řešením race condition (synchronizace):");
             SimulateTransactions(accounts, useLock: true);
+            
+            Console.WriteLine("\nStiskněte ENTER pro ukončení...");
+            Console.ReadLine();
         }
 
         /// <summary>
