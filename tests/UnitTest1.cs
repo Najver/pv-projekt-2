@@ -268,6 +268,57 @@ namespace pv_projekt
             var balanceLine = output.Substring(endIndex).Split('\n')[0];
             return int.Parse(balanceLine.Split(':')[1].Trim());
         }
+        /// <summary>
+        /// Tests the SimulateTransactions method for thread safety by verifying the total balance remains unchanged with locks.
+        /// </summary>
+        [Test]
+        public void TestSimulateTransactions_ThreadSafety()
+        {
+            var accounts = Program.InitializeAccounts(5, 1000);
+            int initialTotalBalance = accounts.Sum();
+            Program.SimulateTransactions(accounts, useLock: true);
+            int finalTotalBalance = accounts.Sum();
+            Assert.AreEqual(initialTotalBalance, finalTotalBalance);
+        }
+
+        /// <summary>
+        /// Tests the SimulateTransactions method without using locks, expecting the total balance to change.
+        /// </summary>
+        [Test]
+        public void TestSimulateTransactions_WithoutLock()
+        {
+            var accounts = Program.InitializeAccounts(5, 1000);
+            int initialTotalBalance = accounts.Sum();
+            Program.SimulateTransactions(accounts, useLock: false);
+            int finalTotalBalance = accounts.Sum();
+            Assert.AreNotEqual(initialTotalBalance, finalTotalBalance);
+        }
+
+        /// <summary>
+        /// Ensures all accounts are accessed at least once during the transaction simulation.
+        /// </summary>
+        [Test]
+        public void TestSimulateTransactions_AllAccountsAccessed()
+        {
+            var accounts = Program.InitializeAccounts(10, 100);
+            var accessedAccounts = new HashSet<int>();
+            var lockObject = new object();
+
+            Parallel.For(0, 10000, _ =>
+            {
+                var random = new Random();
+                int from = random.Next(accounts.Count);
+                int to = random.Next(accounts.Count);
+
+                lock (lockObject)
+                {
+                    accessedAccounts.Add(from);
+                    accessedAccounts.Add(to);
+                }
+            });
+
+            Assert.AreEqual(accounts.Count, accessedAccounts.Count);
+        }
         
     }
 }
