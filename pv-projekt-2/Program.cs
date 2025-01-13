@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,29 +9,60 @@ namespace pv_projekt_2
 {
     public class Program
     {
-        /// <summary>
-        /// The main entry point of the program. It simulates bank transactions with and without race condition handling.
-        /// </summary>
-        /// <param name="args">Command-line arguments (not used in this program).</param>
+        private static readonly string LogFilePath = "log.txt";
+        private const long MinFreeSpaceInBytes = 10 * 1024 * 1024; // 10 MB
+
         public static void Main(string[] args)
         {
-            Console.WriteLine("Zadejte počet účtů (kladné celé číslo):");
-            int accountCount = GetValidatedInput();
-    
-            Console.WriteLine("Zadejte počáteční zůstatek na každém účtu (kladné celé číslo):");
-            int initialBalance = GetValidatedInput();
-    
-            List<int> accounts = InitializeAccounts(accountCount, initialBalance);
-    
-            Console.WriteLine("\nSimulace bez řešení race condition:");
-            SimulateTransactions(accounts, useLock: false);
-    
-            accounts = InitializeAccounts(accountCount, initialBalance); // Reset účtů
-            Console.WriteLine("\nSimulace s řešením race condition (synchronizace):");
-            SimulateTransactions(accounts, useLock: true);
-            
-            Console.WriteLine("\nStiskněte ENTER pro ukončení...");
-            Console.ReadLine();
+            try
+            {
+                CheckDiskSpace();
+                InitializeLog();
+
+                Console.WriteLine("Zadejte počet účtů (kladné celé číslo):");
+                int accountCount = GetValidatedInput();
+
+                Console.WriteLine("Zadejte počáteční zůstatek na každém účtu (kladné celé číslo):");
+                int initialBalance = GetValidatedInput();
+
+                List<int> accounts = InitializeAccounts(accountCount, initialBalance);
+
+                Console.WriteLine("\nSimulace bez řešení race condition:");
+                SimulateTransactions(accounts, useLock: false);
+
+                accounts = InitializeAccounts(accountCount, initialBalance); // Reset účtů
+                Console.WriteLine("\nSimulace s řešením race condition (synchronizace):");
+                SimulateTransactions(accounts, useLock: true);
+
+                Console.WriteLine("\nStiskněte ENTER pro ukončení...");
+                Console.ReadLine();
+            }
+            catch (Exception ex)
+            {
+                LogError("Došlo k neočekávané chybě v programu.", ex);
+                Console.WriteLine("Došlo k chybě. Více informací naleznete v souboru log.txt.");
+            }
+        }
+        
+        private static void CheckDiskSpace()
+        {
+            try
+            {
+                DriveInfo drive = new DriveInfo(Path.GetPathRoot(Environment.CurrentDirectory));
+                long freeSpace = drive.AvailableFreeSpace;
+
+                if (freeSpace < MinFreeSpaceInBytes)
+                {
+                    string message = $"Na disku není dostatek volného místa. Potřebujete alespoň {MinFreeSpaceInBytes / (1024 * 1024)} MB volného místa.";
+                    LogMessage(message);
+                    throw new InvalidOperationException(message);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError("Chyba při kontrole volného místa na disku.", ex);
+                throw;
+            }
         }
 
         /// <summary>
@@ -41,12 +73,20 @@ namespace pv_projekt_2
         /// <returns>A List of integers representing the bank accounts, where each integer is the account balance.</returns>
         public static List<int> InitializeAccounts(int count, int initialBalance)
         {
-            var accounts = new List<int>();
-            for (int i = 0; i < count; i++)
+            try
             {
-                accounts.Add(initialBalance);
+                var accounts = new List<int>();
+                for (int i = 0; i < count; i++)
+                {
+                    accounts.Add(initialBalance);
+                }
+                return accounts;
             }
-            return accounts;
+            catch (Exception ex)
+            {
+                LogError("Chyba při inicializaci účtů.", ex);
+                throw;
+            }
         }
 
         /// <summary>
@@ -63,30 +103,45 @@ namespace pv_projekt_2
         /// </remarks>
         public static void SimulateTransactions(List<int> accounts, bool useLock)
         {
-            object lockObject = new object();
-            Random random = new Random();
-            int transactionCount = 10000;
-        
-            Parallel.For(0, transactionCount, _ =>
+            try
             {
-                int fromAccount = random.Next(accounts.Count);
-                int toAccount = random.Next(accounts.Count);
-                int amount = random.Next(1, 100);
-        
-                if (useLock)
+                object lockObject = new object();
+                Random random = new Random();
+                int transactionCount = 10000;
+
+                Parallel.For(0, transactionCount, _ =>
                 {
-                    lock (lockObject)
+                    try
                     {
-                        PerformTransaction(accounts, fromAccount, toAccount, amount);
+                        int fromAccount = random.Next(accounts.Count);
+                        int toAccount = random.Next(accounts.Count);
+                        int amount = random.Next(1, 100);
+
+                        if (useLock)
+                        {
+                            lock (lockObject)
+                            {
+                                PerformTransaction(accounts, fromAccount, toAccount, amount);
+                            }
+                        }
+                        else
+                        {
+                            PerformTransaction(accounts, fromAccount, toAccount, amount);
+                        }
                     }
-                }
-                else
-                {
-                    PerformTransaction(accounts, fromAccount, toAccount, amount);
-                }
-            });
-        
-            DisplayAccountBalances(accounts);
+                    catch (Exception ex)
+                    {
+                        LogError("Chyba během simulace transakce.", ex);
+                    }
+                });
+
+                DisplayAccountBalances(accounts);
+            }
+            catch (Exception ex)
+            {
+                LogError("Chyba během simulace transakcí.", ex);
+                throw;
+            }
         }
 
         /// <summary>
@@ -101,10 +156,17 @@ namespace pv_projekt_2
         /// </remarks>
         public static void PerformTransaction(List<int> accounts, int from, int to, int amount)
         {
-            if (from != to && accounts[from] >= amount)
+            try
             {
-                accounts[from] -= amount;
-                accounts[to] += amount;
+                if (from != to && accounts[from] >= amount)
+                {
+                    accounts[from] -= amount;
+                    accounts[to] += amount;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Chyba při provádění transakce z účtu {from} na účet {to} o částce {amount}.", ex);
             }
         }
 
@@ -118,14 +180,21 @@ namespace pv_projekt_2
         /// </remarks>
         public static void DisplayAccountBalances(List<int> accounts)
         {
-            Console.WriteLine("Zůstatky na účtech:");
-            for (int i = 0; i < accounts.Count; i++)
+            try
             {
-                Console.WriteLine($"Účet {i + 1}: {accounts[i]} Kč");
+                Console.WriteLine("Zůstatky na účtech:");
+                for (int i = 0; i < accounts.Count; i++)
+                {
+                    Console.WriteLine($"Účet {i + 1}: {accounts[i]} Kč");
+                }
+
+                int totalBalance = accounts.Sum();
+                Console.WriteLine($"Celkový zůstatek: {totalBalance}");
             }
-        
-            int totalBalance = accounts.Sum();
-            Console.WriteLine($"Celkový zůstatek: {totalBalance}");
+            catch (Exception ex)
+            {
+                LogError("Chyba při zobrazování zůstatků na účtech.", ex);
+            }
         }
 
         /// <summary>
@@ -142,15 +211,59 @@ namespace pv_projekt_2
         {
             while (true)
             {
-                string input = Console.ReadLine();
-                if (int.TryParse(input, out int result) && result > 0)
+                try
                 {
-                    return result;
+                    string input = Console.ReadLine();
+                    if (int.TryParse(input, out int result) && result > 0)
+                    {
+                        return result;
+                    }
+                    else
+                    {
+                        LogMessage("Uživatel zadal neplatný vstup.");
+                        Console.WriteLine("Neplatný vstup. Zadejte prosím kladné celé číslo:");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Console.WriteLine("Neplatný vstup. Zadejte prosím kladné celé číslo:");
+                    LogError("Chyba při čtení vstupu od uživatele.", ex);
                 }
+            }
+        }
+        private static void InitializeLog()
+        {
+            try
+            {
+                File.WriteAllText(LogFilePath, $"Log start: {DateTime.Now}\n");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Chyba při inicializaci logovacího systému.");
+                throw;
+            }
+        }
+
+        private static void LogMessage(string message)
+        {
+            try
+            {
+                File.AppendAllText(LogFilePath, $"{DateTime.Now}: {message}\n");
+            }
+            catch (Exception)
+            {
+                // Logování chyby do logovacího systému selhalo
+            }
+        }
+
+        private static void LogError(string message, Exception ex)
+        {
+            try
+            {
+                File.AppendAllText(LogFilePath, $"{DateTime.Now}: ERROR: {message}\n{ex}\n");
+            }
+            catch (Exception)
+            {
+                // Logování chyby do logovacího systému selhalo
             }
         }
     }
